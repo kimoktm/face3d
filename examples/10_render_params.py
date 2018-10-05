@@ -9,6 +9,7 @@ import scipy.io as sio
 from skimage import io
 from time import time
 import matplotlib.pyplot as plt
+import glob
 
 sys.path.append('..')
 import face3d
@@ -22,13 +23,16 @@ bfm = MorphabelModel('Data/BFM/Out/BFM.mat')
 print('init bfm model success')
 
 
-save_folder = 'results/faces/train'
+save_folder = 'results/faces/output'
 if not os.path.exists(save_folder):
     os.mkdir(save_folder)
 
 h = w = 200; c = 3
 
-for i in range(1000):
+
+for filename in glob.glob('{}/predicted_*.npy'.format(save_folder)):
+	i = os.path.splitext(os.path.basename(filename))[0].split('_')[-1]
+
 	# --- 2. generate face mesh: vertices(represent shape) & colors(represent texture)
 	sp = bfm.get_shape_para('zero')
 	ep = bfm.get_exp_para('zero')
@@ -39,22 +43,14 @@ for i in range(1000):
 	colors = np.minimum(np.maximum(colors, 0), 1)
 
 	# --- 3. transform vertices to proper position
-	s = 8e-04
-	angles = np.array([0, 0, 0])
-	t = np.array([0, 0, 0])
-	# t = np.random.rand(3, 1)*1e02*0.2
-
-	# IMPORTANT: Multiply by 2 for large dataset
-	# t = np.random.uniform(-15, 15, 3)
-	angles = np.random.uniform(-45, 45, 3)
-
-	# angles[0] = 0
-	# angles[-1] = 0
-	pose = np.r_[angles.flatten(), t[:2].flatten()]
-	# pose = np.around(pose, decimals=2)
+	pose = np.load(filename)
 	pose = np.float32(pose)
 
-	transformed_vertices = bfm.transform(vertices, s, pose[:3], np.r_[pose[3:5], [0]])
+	s = 8e-04
+	angles = pose[:3]
+	t = np.r_[pose[3:5], [0]]
+
+	transformed_vertices = bfm.transform(vertices, s, angles, t)
 	projected_vertices = transformed_vertices.copy() # using stantard camera & orth projection
 
 	# --- 4. render(3d obj --> 2d image)
@@ -62,18 +58,11 @@ for i in range(1000):
 	image_vertices = mesh.transform.to_image(projected_vertices, h, w)
 	image = mesh_cython.render.render_colors(image_vertices, bfm.triangles, colors, h, w)
 
-	# pose = np.r_[angles.flatten(), t[:2].flatten(), s]
-	# pose = np.float32(pose)
-
-	# print('pose, groudtruth: \n', s, angles[0], angles[1], angles[2], t[0], t[1])
 	print(pose)
 	image = np.clip(image, 0, 1)
-	io.imsave('{}/generated_{}.jpg'.format(save_folder, i), image)
-	# np.save('{}/rot_{}.npy'.format(save_folder, i), angles.flatten())
-	# np.save('{}/trn_{}.npy'.format(save_folder, i), t[:2])
-	# np.save('{}/generated_{}.npy'.format(save_folder, i), pose)
-	np.save('{}/generated_{}.npy'.format(save_folder, i), pose)
 
+	# print('pose, groudtruth: \n', s, angles[0], angles[1], angles[2], t[0], t[1])
+	io.imsave('{}/predicted_{}.jpg'.format(save_folder, i), image)
 
 options = '-delay 20 -loop 0 -layers optimize' # gif. need ImageMagick.
-subprocess.call('convert {} {}/generated_*.jpg {}'.format(options, save_folder, save_folder + '/3dmm.gif'), shell=True)
+subprocess.call('convert {} {}/predicted_*.jpg {}'.format(options, save_folder, save_folder + '/3dmm.gif'), shell=True)
