@@ -37,26 +37,33 @@ class  MorphabelModel(object):
         self.ntri = self.model['tri'].shape[0]
         self.n_shape_para = self.model['shapePC'].shape[1]
         self.n_exp_para = self.model['expPC'].shape[1]
-        self.n_tex_para = self.model['texMU'].shape[1]
-        
+        self.n_tex_para = self.model['texPC'].shape[1]
         self.kpt_ind = self.model['kpt_ind']
         self.triangles = self.model['tri']
         self.full_triangles = np.vstack((self.model['tri'], self.model['tri_mouth']))
 
+        # expression Eigen are not normalized correctly
+        self.model['expEV'] = self.model['expEV'] * 1e-2 * 3
+
+        # limit PCA params
+        self.n_shape_para = 10
+        self.n_tex_para = 10
+
+
     # ------------------------------------- shape: represented with mesh(vertices & triangles(fixed))
-    def get_shape_para(self, type = 'random'):
+    def get_shape_para(self, type = 'random', std = 1.2):
         if type == 'zero':
             sp = np.zeros((self.n_shape_para, 1))
         elif type == 'random':
-            sp = np.random.rand(self.n_shape_para, 1)*1e04
+            sp = np.random.uniform(-std, std, [self.n_shape_para, 1])
+
         return sp
 
-    def get_exp_para(self, type = 'random'):
+    def get_exp_para(self, type = 'random', std = 1.2):
         if type == 'zero':
             ep = np.zeros((self.n_exp_para, 1))
         elif type == 'random':
-            ep = -1.5 + 3*np.random.random([self.n_exp_para, 1])
-            ep[6:, 0] = ep[6:, 0] * 0.2
+            ep = np.random.uniform(-std, std, [self.n_exp_para, 1])
 
         return ep 
 
@@ -68,17 +75,20 @@ class  MorphabelModel(object):
         Returns:
             vertices: (nver, 3)
         '''
-        vertices = self.model['shapeMU'] + self.model['shapePC'][:, :self.n_shape_para].dot(shape_para) + self.model['expPC'].dot(exp_para)
+
+        vertices = self.model['shapeMU'] + self.model['shapePC'][:, :self.n_shape_para].dot(shape_para * self.model['shapeEV'][:self.n_shape_para])
+        vertices = vertices + self.model['expPC'].dot(exp_para * self.model['expEV'][:self.n_exp_para])
         vertices = np.reshape(vertices, [int(3), int(len(vertices)/3)], 'F').T
 
         return vertices
 
     # -------------------------------------- texture: here represented with rgb value(colors) in vertices.
-    def get_tex_para(self, type = 'random'):
+    def get_tex_para(self, type = 'random', std = 1.2):
         if type == 'zero':
             tp = np.zeros((self.n_tex_para, 1))
         elif type == 'random':
-            tp = np.random.rand(self.n_tex_para, 1)
+            tp = np.random.uniform(-std, std, [self.n_tex_para, 1])
+
         return tp
 
     def generate_colors(self, tex_para):
@@ -88,9 +98,9 @@ class  MorphabelModel(object):
         Returns:
             colors: (nver, 3)
         '''
-        colors = self.model['texMU'] + self.model['texPC'].dot(tex_para*self.model['texEV'])
+        colors = self.model['texMU'] + self.model['texPC'][:, :self.n_tex_para].dot(tex_para * self.model['texEV'][:self.n_tex_para])
         colors = np.reshape(colors, [int(3), int(len(colors)/3)], 'F').T/255.  
-        
+
         return colors
 
 
@@ -110,10 +120,12 @@ class  MorphabelModel(object):
         return mesh.transform.rotate(vertices, angles)
 
     def transform(self, vertices, s, angles, t3d):
+        s =  8e-04 + s * 1e-05
         R = mesh.transform.angle2matrix(angles)
         return mesh.transform.similarity_transform(vertices, s, R, t3d)
 
     def transform_3ddfa(self, vertices, s, angles, t3d): # only used for processing 300W_LP data
+        s =  8e-04 + s * 1e-05
         R = mesh.transform.angle2matrix_3ddfa(angles)
         return mesh.transform.similarity_transform(vertices, s, R, t3d)
 
